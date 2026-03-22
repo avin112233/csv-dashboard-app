@@ -1,66 +1,74 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import io
+import numpy as np
 
-# ---------------------------
-# PAGE CONFIG
-# ---------------------------
 st.set_page_config(page_title="CSV Dashboard Generator", layout="wide")
 
-# ---------------------------
-# HEADER
-# ---------------------------
 st.title("📊 CSV Dashboard Generator")
 st.caption("AI-powered automated business reporting tool")
 st.write("Upload your CSV file and get instant insights, visualizations, data quality checks, and downloadable data.")
 
-# ---------------------------
-# FILE UPLOAD
-# ---------------------------
 uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+
 
 # ---------------------------
 # HELPER FUNCTIONS
 # ---------------------------
-def generate_auto_insights(df, numeric_cols, categorical_cols):
-    insights = []
+def detect_date_columns(df):
+    date_cols = []
+    for col in df.columns:
+        if df[col].dtype == "object":
+            converted = pd.to_datetime(df[col], errors="coerce")
+            if converted.notna().mean() > 0.7:
+                date_cols.append(col)
+        elif str(df[col].dtype).startswith("datetime"):
+            date_cols.append(col)
+    return date_cols
 
-    if numeric_cols:
-        for col in numeric_cols[:3]:
-            insights.append(
-                f"**{col}** → Mean: {df[col].mean():.2f}, Median: {df[col].median():.2f}, Min: {df[col].min():.2f}, Max: {df[col].max():.2f}"
-            )
 
-        if len(numeric_cols) >= 2:
-            corr = df[numeric_cols].corr().abs()
-            corr_pairs = []
+def detect_business_columns(df, numeric_cols, categorical_cols):
+    business_hints = {
+        "sales": None,
+        "amount": None,
+        "revenue": None,
+        "profit": None,
+        "quantity": None,
+        "customer": None,
+        "product": None,
+        "category": None,
+        "date": None
+    }
 
-            for i in range(len(corr.columns)):
-                for j in range(i + 1, len(corr.columns)):
-                    corr_pairs.append((corr.columns[i], corr.columns[j], corr.iloc[i, j]))
+    for col in df.columns:
+        col_lower = col.lower()
 
-            if corr_pairs:
-                top_corr = sorted(corr_pairs, key=lambda x: x[2], reverse=True)[0]
-                insights.append(
-                    f"Strongest relationship found between **{top_corr[0]}** and **{top_corr[1]}** with correlation **{top_corr[2]:.2f}**."
-                )
+        if business_hints["sales"] is None and "sale" in col_lower:
+            business_hints["sales"] = col
+        if business_hints["amount"] is None and "amount" in col_lower:
+            business_hints["amount"] = col
+        if business_hints["revenue"] is None and "revenue" in col_lower:
+            business_hints["revenue"] = col
+        if business_hints["profit"] is None and "profit" in col_lower:
+            business_hints["profit"] = col
+        if business_hints["quantity"] is None and ("qty" in col_lower or "quantity" in col_lower):
+            business_hints["quantity"] = col
+        if business_hints["customer"] is None and "customer" in col_lower:
+            business_hints["customer"] = col
+        if business_hints["product"] is None and "product" in col_lower:
+            business_hints["product"] = col
+        if business_hints["category"] is None and "category" in col_lower:
+            business_hints["category"] = col
+        if business_hints["date"] is None and "date" in col_lower:
+            business_hints["date"] = col
 
-    if categorical_cols:
-        for col in categorical_cols[:2]:
-            if not df[col].mode().empty:
-                top_item = df[col].mode().iloc[0]
-                insights.append(f"Most frequent value in **{col}** is **{top_item}**.")
+    if business_hints["amount"] is None and numeric_cols:
+        business_hints["amount"] = numeric_cols[0]
 
-    missing_count = int(df.isnull().sum().sum())
-    if missing_count > 0:
-        insights.append(f"Dataset contains **{missing_count} missing values**. Data cleaning may be needed.")
+    if business_hints["category"] is None and categorical_cols:
+        business_hints["category"] = categorical_cols[0]
 
-    duplicate_count = int(df.duplicated().sum())
-    if duplicate_count > 0:
-        insights.append(f"Dataset contains **{duplicate_count} duplicate rows**.")
-
-    return insights
+    return business_hints
 
 
 def data_quality_checks(df):
@@ -76,14 +84,207 @@ def data_quality_checks(df):
     return checks
 
 
-def build_summary_text(df, numeric_cols, categorical_cols, quality_checks):
+def get_outlier_info(series):
+    clean_series = series.dropna()
+    if len(clean_series) < 5:
+        return None
+
+    q1 = clean_series.quantile(0.25)
+    q3 = clean_series.quantile(0.75)
+    iqr = q3 - q1
+
+    if iqr == 0:
+        return None
+
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+    outliers = clean_series[(clean_series < lower) | (clean_series > upper)]
+
+    return {
+        "count": len(outliers),
+        "pct": round((len(outliers) / len(clean_series)) * 100, 2)
+    }
+
+
+def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quality_checks):
+    insights = []
+    business_cols = detect_business_columns(df, numeric_cols, categorical_cols)
+
+    # Priority 1: Quality insights
+    if quality_checks["missing_values"] > 0:
+        insights.append({
+            "priority": 100,
+            "text": f"Dataset contains **{quality_checks['missing_values']} missing values**, so some charts and summaries may be affected."
+        })
+
+    if quality_checks["duplicate_rows"] > 0:
+        insights.append({
+            "priority": 95,
+            "text": f"Dataset contains **{quality_checks['duplicate_rows']} duplicate rows**, which may inflate totals and averages."
+        })
+
+    if quality_checks["empty_cols"]:
+        insights.append({
+            "priority": 92,
+            "text": f"These columns are completely empty: **{', '.join(quality_checks['empty_cols'])}**."
+        })
+
+    if quality_checks["constant_cols"]:
+        insights.append({
+            "priority": 90,
+            "text": f"These columns have only one value throughout the dataset: **{', '.join(quality_checks['constant_cols'])}**."
+        })
+
+    # Priority 2: Numeric insights
+    for col in numeric_cols[:6]:
+        clean_series = df[col].dropna()
+        if clean_series.empty:
+            continue
+
+        mean_val = clean_series.mean()
+        median_val = clean_series.median()
+
+        if mean_val > median_val * 1.2 and median_val != 0:
+            insights.append({
+                "priority": 80,
+                "text": f"**{col}** appears right-skewed because the mean (**{mean_val:.2f}**) is notably higher than the median (**{median_val:.2f}**)."
+            })
+
+        outlier_info = get_outlier_info(df[col])
+        if outlier_info and outlier_info["count"] > 0:
+            insights.append({
+                "priority": 85,
+                "text": f"**{col}** has **{outlier_info['count']} potential outliers** ({outlier_info['pct']}% of non-null values)."
+            })
+
+        if clean_series.nunique() > 1:
+            cv = clean_series.std() / clean_series.mean() if clean_series.mean() != 0 else np.nan
+            if pd.notna(cv) and cv > 1:
+                insights.append({
+                    "priority": 75,
+                    "text": f"**{col}** is highly variable relative to its mean, indicating inconsistent behavior or wide dispersion."
+                })
+
+    # Priority 3: Correlation insight
+    if len(numeric_cols) >= 2:
+        corr = df[numeric_cols].corr(numeric_only=True)
+        corr_pairs = []
+
+        for i in range(len(corr.columns)):
+            for j in range(i + 1, len(corr.columns)):
+                value = corr.iloc[i, j]
+                if not pd.isna(value):
+                    corr_pairs.append((corr.columns[i], corr.columns[j], value, abs(value)))
+
+        if corr_pairs:
+            best_pair = sorted(corr_pairs, key=lambda x: x[3], reverse=True)[0]
+            direction = "positive" if best_pair[2] > 0 else "negative"
+            if best_pair[3] >= 0.5:
+                insights.append({
+                    "priority": 88,
+                    "text": f"The strongest numeric relationship is between **{best_pair[0]}** and **{best_pair[1]}**, with a **{direction} correlation of {best_pair[2]:.2f}**."
+                })
+
+    # Priority 4: Categorical concentration
+    for col in categorical_cols[:4]:
+        vc = df[col].value_counts(dropna=False)
+        if not vc.empty:
+            top_value = vc.index[0]
+            top_count = vc.iloc[0]
+            top_pct = round((top_count / len(df)) * 100, 2)
+
+            if top_pct >= 50:
+                insights.append({
+                    "priority": 82,
+                    "text": f"**{col}** is highly concentrated: top value **{top_value}** represents **{top_pct}%** of rows."
+                })
+            else:
+                insights.append({
+                    "priority": 60,
+                    "text": f"The most common value in **{col}** is **{top_value}**, appearing in **{top_pct}%** of rows."
+                })
+
+    # Priority 5: Date trend insight
+    chosen_date_col = None
+    if business_cols["date"] in df.columns:
+        chosen_date_col = business_cols["date"]
+    elif date_cols:
+        chosen_date_col = date_cols[0]
+
+    value_col = None
+    for candidate in [business_cols["sales"], business_cols["revenue"], business_cols["amount"], business_cols["profit"], business_cols["quantity"]]:
+        if candidate in numeric_cols:
+            value_col = candidate
+            break
+
+    if chosen_date_col and value_col:
+        temp = df[[chosen_date_col, value_col]].copy()
+        temp[chosen_date_col] = pd.to_datetime(temp[chosen_date_col], errors="coerce")
+        temp = temp.dropna(subset=[chosen_date_col, value_col])
+
+        if len(temp) >= 3:
+            temp = temp.sort_values(chosen_date_col)
+            grouped = temp.groupby(temp[chosen_date_col].dt.to_period("M"))[value_col].sum()
+
+            if len(grouped) >= 2:
+                first_val = grouped.iloc[0]
+                last_val = grouped.iloc[-1]
+
+                if first_val != 0:
+                    change_pct = ((last_val - first_val) / abs(first_val)) * 100
+                    if change_pct > 10:
+                        insights.append({
+                            "priority": 87,
+                            "text": f"**{value_col}** shows an increasing trend over time, rising by approximately **{change_pct:.2f}%** from the first visible period to the last."
+                        })
+                    elif change_pct < -10:
+                        insights.append({
+                            "priority": 87,
+                            "text": f"**{value_col}** shows a declining trend over time, decreasing by approximately **{abs(change_pct):.2f}%** from the first visible period to the last."
+                        })
+
+    # Priority 6: Business-style insight
+    if value_col and business_cols["category"] in df.columns:
+        grp = df.groupby(business_cols["category"])[value_col].sum().sort_values(ascending=False)
+        if len(grp) > 0:
+            top_cat = grp.index[0]
+            top_val = grp.iloc[0]
+            total_val = grp.sum()
+            if total_val != 0:
+                pct = round((top_val / total_val) * 100, 2)
+                insights.append({
+                    "priority": 86,
+                    "text": f"Top contributing **{business_cols['category']}** is **{top_cat}**, contributing **{pct}%** of total **{value_col}**."
+                })
+
+    # Final ranking
+    insights = sorted(insights, key=lambda x: x["priority"], reverse=True)
+
+    # Remove near-duplicate texts
+    final_texts = []
+    seen = set()
+    for item in insights:
+        text = item["text"]
+        if text not in seen:
+            final_texts.append(text)
+            seen.add(text)
+
+    return final_texts[:8]
+
+
+def build_summary_text(df, numeric_cols, categorical_cols, quality_checks, smart_insights):
     summary = []
     summary.append("CSV Dashboard Summary")
-    summary.append("=" * 30)
+    summary.append("=" * 40)
     summary.append(f"Rows: {df.shape[0]}")
     summary.append(f"Columns: {df.shape[1]}")
     summary.append(f"Missing Values: {quality_checks['missing_values']}")
     summary.append(f"Duplicate Rows: {quality_checks['duplicate_rows']}")
+    summary.append("")
+
+    summary.append("Top Insights:")
+    for item in smart_insights[:5]:
+        summary.append(f"- {item}")
     summary.append("")
 
     if numeric_cols:
@@ -97,8 +298,9 @@ def build_summary_text(df, numeric_cols, categorical_cols, quality_checks):
     if categorical_cols:
         summary.append("Categorical Columns Overview:")
         for col in categorical_cols[:5]:
-            if not df[col].mode().empty:
-                summary.append(f"- {col}: most frequent value={df[col].mode().iloc[0]}")
+            mode_vals = df[col].mode()
+            top_value = mode_vals.iloc[0] if not mode_vals.empty else "N/A"
+            summary.append(f"- {col}: most frequent value={top_value}")
         summary.append("")
 
     if quality_checks["empty_cols"]:
@@ -118,7 +320,6 @@ if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
 
-            # Sidebar filters
             st.sidebar.header("🔎 Filters")
             selected_columns = st.sidebar.multiselect(
                 "Select columns to view",
@@ -126,16 +327,16 @@ if uploaded_file is not None:
                 default=df.columns.tolist()
             )
 
-            if selected_columns:
-                df = df[selected_columns]
-            else:
+            if not selected_columns:
                 st.warning("Please select at least one column from the sidebar.")
                 st.stop()
 
+            df = df[selected_columns]
+
             numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
             categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+            date_cols = detect_date_columns(df)
 
-            # Metrics
             st.subheader("📌 Key Metrics")
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Rows", df.shape[0])
@@ -143,11 +344,9 @@ if uploaded_file is not None:
             col3.metric("Missing Values", int(df.isnull().sum().sum()))
             col4.metric("Duplicate Rows", int(df.duplicated().sum()))
 
-            # Data preview
             st.subheader("📂 Data Preview")
             st.dataframe(df.head(10), use_container_width=True)
 
-            # Data types
             st.subheader("🧾 Column Data Types")
             dtype_df = pd.DataFrame({
                 "Column": df.columns,
@@ -155,7 +354,6 @@ if uploaded_file is not None:
             })
             st.dataframe(dtype_df, use_container_width=True)
 
-            # Missing values summary
             st.subheader("⚠️ Missing Values Summary")
             missing_df = pd.DataFrame({
                 "Column": df.columns,
@@ -164,7 +362,6 @@ if uploaded_file is not None:
             }).sort_values(by="Missing Count", ascending=False)
             st.dataframe(missing_df, use_container_width=True)
 
-            # Numeric summary
             if numeric_cols:
                 st.subheader("📈 Numeric Summary")
                 st.dataframe(df[numeric_cols].describe().T, use_container_width=True)
@@ -189,25 +386,21 @@ if uploaded_file is not None:
                 ax.set_xlabel(selected_num_col)
                 ax.set_ylabel("Frequency")
                 st.pyplot(fig)
-
             else:
                 st.info("No numeric columns found in the uploaded dataset.")
 
-            # Scatter plot
             if len(numeric_cols) >= 2:
                 st.subheader("🔵 Scatter Plot")
                 x_axis = st.selectbox("Select X-axis", numeric_cols, key="x_axis")
                 y_axis = st.selectbox("Select Y-axis", numeric_cols, key="y_axis")
 
                 fig2, ax2 = plt.subplots()
-                ax2.scatter(df[x_axis], df[y_axis], label="Data Points")
+                ax2.scatter(df[x_axis], df[y_axis])
                 ax2.set_title(f"{x_axis} vs {y_axis}")
                 ax2.set_xlabel(x_axis)
                 ax2.set_ylabel(y_axis)
-                ax2.legend()
                 st.pyplot(fig2)
 
-            # Categorical analysis
             if categorical_cols:
                 st.subheader("📊 Categorical Analysis")
                 selected_cat_col = st.selectbox("Select categorical column", categorical_cols)
@@ -215,7 +408,7 @@ if uploaded_file is not None:
                 cat_counts = df[selected_cat_col].value_counts().head(10)
 
                 fig3, ax3 = plt.subplots()
-                bars = ax3.bar(cat_counts.index.astype(str), cat_counts.values, label="Category Count")
+                bars = ax3.bar(cat_counts.index.astype(str), cat_counts.values)
 
                 for bar in bars:
                     height = bar.get_height()
@@ -231,14 +424,11 @@ if uploaded_file is not None:
                 ax3.set_title(f"Top Categories in {selected_cat_col}")
                 ax3.set_xlabel(selected_cat_col)
                 ax3.set_ylabel("Count")
-                ax3.legend()
                 plt.xticks(rotation=45)
                 st.pyplot(fig3)
-
             else:
                 st.info("No categorical columns found in the uploaded dataset.")
 
-            # Correlation heatmap
             if len(numeric_cols) > 1:
                 st.subheader("🔥 Correlation Heatmap")
                 corr = df[numeric_cols].corr()
@@ -254,7 +444,6 @@ if uploaded_file is not None:
 
                 st.pyplot(fig4)
 
-            # Data quality checks
             st.subheader("🛡️ Data Quality Checks")
             quality_checks = data_quality_checks(df)
 
@@ -278,17 +467,21 @@ if uploaded_file is not None:
             ):
                 st.success("No major data quality issues found.")
 
-            # Auto insights
-            st.subheader("🤖 Auto Insights")
-            insights = generate_auto_insights(df, numeric_cols, categorical_cols)
+            st.subheader("🤖 Smart Insights")
+            smart_insights = generate_smart_insights(
+                df,
+                numeric_cols,
+                categorical_cols,
+                date_cols,
+                quality_checks
+            )
 
-            if insights:
-                for insight in insights:
+            if smart_insights:
+                for insight in smart_insights:
                     st.markdown(f"- {insight}")
             else:
-                st.info("No auto insights available for this dataset.")
+                st.info("No strong insights detected for this dataset.")
 
-            # Advanced insights
             st.subheader("🧠 Advanced Insights")
             if numeric_cols:
                 for col in numeric_cols[:4]:
@@ -299,14 +492,12 @@ if uploaded_file is not None:
                     col_c.metric("Min", round(df[col].min(), 2))
                     col_d.metric("Max", round(df[col].max(), 2))
 
-            # Record preview
             st.subheader("🔝 Top 5 Records")
             st.dataframe(df.head(5), use_container_width=True)
 
             st.subheader("🔚 Bottom 5 Records")
             st.dataframe(df.tail(5), use_container_width=True)
 
-            # Download options
             st.subheader("⬇️ Download Processed Data")
             csv_data = df.to_csv(index=False).encode("utf-8")
 
@@ -317,8 +508,14 @@ if uploaded_file is not None:
                 mime="text/csv"
             )
 
-            # Summary download
-            summary_text = build_summary_text(df, numeric_cols, categorical_cols, quality_checks)
+            summary_text = build_summary_text(
+                df,
+                numeric_cols,
+                categorical_cols,
+                quality_checks,
+                smart_insights
+            )
+
             st.download_button(
                 label="Download Summary Report",
                 data=summary_text,
@@ -326,7 +523,6 @@ if uploaded_file is not None:
                 mime="text/plain"
             )
 
-            # Premium section
             st.subheader("💎 Premium Features")
             st.info(
                 "Upgrade to unlock PDF reports, AI-generated business summary, anomaly detection, saved dashboards, and multi-file comparison."
@@ -334,6 +530,5 @@ if uploaded_file is not None:
 
         except Exception as e:
             st.error(f"Error reading file: {e}")
-
 else:
     st.info("Please upload a CSV file to begin.")
