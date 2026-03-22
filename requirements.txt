@@ -3,4 +3,3 @@ pandas
 matplotlib
 plotly
 seaborn
-urllib3<2
