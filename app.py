@@ -1,13 +1,20 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="CSV Dashboard Generator", layout="wide")
 
+# ---------------------------
+# HEADER
+# ---------------------------
 st.title("📊 CSV Dashboard Generator")
 st.caption("AI-powered automated business reporting tool")
-st.write("Upload your CSV file and get instant insights, visualizations, data quality checks, and downloadable data.")
+st.write(
+    "Upload your CSV file and get instant insights, visualizations, "
+    "data quality checks, and downloadable data."
+)
 
 uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
 
@@ -22,9 +29,22 @@ def detect_date_columns(df):
             converted = pd.to_datetime(df[col], errors="coerce")
             if converted.notna().mean() > 0.7:
                 date_cols.append(col)
-        elif str(df[col].dtype).startswith("datetime"):
+        elif "datetime" in str(df[col].dtype):
             date_cols.append(col)
     return date_cols
+
+
+def data_quality_checks(df):
+    empty_cols = [col for col in df.columns if df[col].isnull().all()]
+    constant_cols = [col for col in df.columns if df[col].nunique(dropna=False) == 1]
+
+    checks = {
+        "empty_cols": empty_cols,
+        "constant_cols": constant_cols,
+        "missing_values": int(df.isnull().sum().sum()),
+        "duplicate_rows": int(df.duplicated().sum()),
+    }
+    return checks
 
 
 def detect_business_columns(df, numeric_cols, categorical_cols):
@@ -71,19 +91,6 @@ def detect_business_columns(df, numeric_cols, categorical_cols):
     return business_hints
 
 
-def data_quality_checks(df):
-    empty_cols = [col for col in df.columns if df[col].isnull().all()]
-    constant_cols = [col for col in df.columns if df[col].nunique(dropna=False) == 1]
-
-    checks = {
-        "empty_cols": empty_cols,
-        "constant_cols": constant_cols,
-        "missing_values": int(df.isnull().sum().sum()),
-        "duplicate_rows": int(df.duplicated().sum()),
-    }
-    return checks
-
-
 def get_outlier_info(series):
     clean_series = series.dropna()
     if len(clean_series) < 5:
@@ -110,11 +117,10 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
     insights = []
     business_cols = detect_business_columns(df, numeric_cols, categorical_cols)
 
-    # Priority 1: Quality insights
     if quality_checks["missing_values"] > 0:
         insights.append({
             "priority": 100,
-            "text": f"Dataset contains **{quality_checks['missing_values']} missing values**, so some charts and summaries may be affected."
+            "text": f"Dataset contains **{quality_checks['missing_values']} missing values**, so some summaries may be affected."
         })
 
     if quality_checks["duplicate_rows"] > 0:
@@ -135,7 +141,6 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
             "text": f"These columns have only one value throughout the dataset: **{', '.join(quality_checks['constant_cols'])}**."
         })
 
-    # Priority 2: Numeric insights
     for col in numeric_cols[:6]:
         clean_series = df[col].dropna()
         if clean_series.empty:
@@ -147,7 +152,7 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
         if mean_val > median_val * 1.2 and median_val != 0:
             insights.append({
                 "priority": 80,
-                "text": f"**{col}** appears right-skewed because the mean (**{mean_val:.2f}**) is notably higher than the median (**{median_val:.2f}**)."
+                "text": f"**{col}** appears right-skewed because mean (**{mean_val:.2f}**) is higher than median (**{median_val:.2f}**)."
             })
 
         outlier_info = get_outlier_info(df[col])
@@ -162,10 +167,9 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
             if pd.notna(cv) and cv > 1:
                 insights.append({
                     "priority": 75,
-                    "text": f"**{col}** is highly variable relative to its mean, indicating inconsistent behavior or wide dispersion."
+                    "text": f"**{col}** is highly variable relative to its mean, indicating wide dispersion."
                 })
 
-    # Priority 3: Correlation insight
     if len(numeric_cols) >= 2:
         corr = df[numeric_cols].corr(numeric_only=True)
         corr_pairs = []
@@ -182,10 +186,9 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
             if best_pair[3] >= 0.5:
                 insights.append({
                     "priority": 88,
-                    "text": f"The strongest numeric relationship is between **{best_pair[0]}** and **{best_pair[1]}**, with a **{direction} correlation of {best_pair[2]:.2f}**."
+                    "text": f"Strongest relationship found between **{best_pair[0]}** and **{best_pair[1]}** with **{direction} correlation = {best_pair[2]:.2f}**."
                 })
 
-    # Priority 4: Categorical concentration
     for col in categorical_cols[:4]:
         vc = df[col].value_counts(dropna=False)
         if not vc.empty:
@@ -201,10 +204,9 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
             else:
                 insights.append({
                     "priority": 60,
-                    "text": f"The most common value in **{col}** is **{top_value}**, appearing in **{top_pct}%** of rows."
+                    "text": f"Most frequent value in **{col}** is **{top_value}** ({top_pct}% of rows)."
                 })
 
-    # Priority 5: Date trend insight
     chosen_date_col = None
     if business_cols["date"] in df.columns:
         chosen_date_col = business_cols["date"]
@@ -212,7 +214,13 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
         chosen_date_col = date_cols[0]
 
     value_col = None
-    for candidate in [business_cols["sales"], business_cols["revenue"], business_cols["amount"], business_cols["profit"], business_cols["quantity"]]:
+    for candidate in [
+        business_cols["sales"],
+        business_cols["revenue"],
+        business_cols["amount"],
+        business_cols["profit"],
+        business_cols["quantity"]
+    ]:
         if candidate in numeric_cols:
             value_col = candidate
             break
@@ -235,15 +243,14 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
                     if change_pct > 10:
                         insights.append({
                             "priority": 87,
-                            "text": f"**{value_col}** shows an increasing trend over time, rising by approximately **{change_pct:.2f}%** from the first visible period to the last."
+                            "text": f"**{value_col}** shows an increasing trend over time, rising by approximately **{change_pct:.2f}%**."
                         })
                     elif change_pct < -10:
                         insights.append({
                             "priority": 87,
-                            "text": f"**{value_col}** shows a declining trend over time, decreasing by approximately **{abs(change_pct):.2f}%** from the first visible period to the last."
+                            "text": f"**{value_col}** shows a declining trend over time, decreasing by approximately **{abs(change_pct):.2f}%**."
                         })
 
-    # Priority 6: Business-style insight
     if value_col and business_cols["category"] in df.columns:
         grp = df.groupby(business_cols["category"])[value_col].sum().sort_values(ascending=False)
         if len(grp) > 0:
@@ -257,10 +264,8 @@ def generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quali
                     "text": f"Top contributing **{business_cols['category']}** is **{top_cat}**, contributing **{pct}%** of total **{value_col}**."
                 })
 
-    # Final ranking
     insights = sorted(insights, key=lambda x: x["priority"], reverse=True)
 
-    # Remove near-duplicate texts
     final_texts = []
     seen = set()
     for item in insights:
@@ -291,7 +296,8 @@ def build_summary_text(df, numeric_cols, categorical_cols, quality_checks, smart
         summary.append("Numeric Columns Overview:")
         for col in numeric_cols[:5]:
             summary.append(
-                f"- {col}: mean={df[col].mean():.2f}, median={df[col].median():.2f}, min={df[col].min():.2f}, max={df[col].max():.2f}"
+                f"- {col}: mean={df[col].mean():.2f}, median={df[col].median():.2f}, "
+                f"min={df[col].min():.2f}, max={df[col].max():.2f}"
             )
         summary.append("")
 
@@ -336,197 +342,302 @@ if uploaded_file is not None:
             numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
             categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
             date_cols = detect_date_columns(df)
+            quality_checks = data_quality_checks(df)
+            smart_insights = generate_smart_insights(
+                df, numeric_cols, categorical_cols, date_cols, quality_checks
+            )
 
-            st.subheader("📌 Key Metrics")
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Rows", df.shape[0])
-            col2.metric("Columns", df.shape[1])
-            col3.metric("Missing Values", int(df.isnull().sum().sum()))
-            col4.metric("Duplicate Rows", int(df.duplicated().sum()))
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+                [
+                    "📊 Overview",
+                    "📈 Trends",
+                    "📉 Distribution",
+                    "🔗 Correlation",
+                    "🛡️ Data Quality",
+                    "🧠 Insights & Downloads"
+                ]
+            )
 
-            st.subheader("📂 Data Preview")
-            st.dataframe(df.head(10), use_container_width=True)
+            # ---------------------------
+            # TAB 1: OVERVIEW
+            # ---------------------------
+            with tab1:
+                st.subheader("📌 Key Metrics")
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Rows", df.shape[0])
+                col2.metric("Columns", df.shape[1])
+                col3.metric("Missing Values", int(df.isnull().sum().sum()))
+                col4.metric("Duplicate Rows", int(df.duplicated().sum()))
 
-            st.subheader("🧾 Column Data Types")
-            dtype_df = pd.DataFrame({
-                "Column": df.columns,
-                "Data Type": df.dtypes.astype(str)
-            })
-            st.dataframe(dtype_df, use_container_width=True)
+                st.subheader("📂 Data Preview")
+                st.dataframe(df.head(10), use_container_width=True)
 
-            st.subheader("⚠️ Missing Values Summary")
-            missing_df = pd.DataFrame({
-                "Column": df.columns,
-                "Missing Count": df.isnull().sum().values,
-                "Missing %": ((df.isnull().sum().values / len(df)) * 100).round(2)
-            }).sort_values(by="Missing Count", ascending=False)
-            st.dataframe(missing_df, use_container_width=True)
+                st.subheader("🧾 Column Data Types")
+                dtype_df = pd.DataFrame({
+                    "Column": df.columns,
+                    "Data Type": df.dtypes.astype(str)
+                })
+                st.dataframe(dtype_df, use_container_width=True)
 
-            if numeric_cols:
-                st.subheader("📈 Numeric Summary")
-                st.dataframe(df[numeric_cols].describe().T, use_container_width=True)
+                if categorical_cols:
+                    st.subheader("🥧 Category Distribution")
+                    overview_cat = st.selectbox(
+                        "Select categorical column",
+                        categorical_cols,
+                        key="overview_cat"
+                    )
+                    pie_fig = px.pie(df, names=overview_cat, title=f"{overview_cat} Distribution")
+                    st.plotly_chart(pie_fig, use_container_width=True)
 
-                selected_num_col = st.selectbox("Select numeric column for histogram", numeric_cols)
+                st.subheader("🔝 Top 5 Records")
+                st.dataframe(df.head(5), use_container_width=True)
 
-                fig, ax = plt.subplots()
-                counts, bins, patches = ax.hist(df[selected_num_col].dropna(), bins=20, edgecolor="black")
+                st.subheader("🔚 Bottom 5 Records")
+                st.dataframe(df.tail(5), use_container_width=True)
 
-                for i in range(len(counts)):
-                    if counts[i] > 0:
-                        ax.text(
-                            bins[i],
-                            counts[i],
-                            str(int(counts[i])),
-                            fontsize=8,
-                            ha="left",
-                            va="bottom"
-                        )
+            # ---------------------------
+            # TAB 2: TRENDS
+            # ---------------------------
+            with tab2:
+                st.subheader("📈 Trend Analysis")
 
-                ax.set_title(f"Histogram of {selected_num_col}")
-                ax.set_xlabel(selected_num_col)
-                ax.set_ylabel("Frequency")
-                st.pyplot(fig)
-            else:
-                st.info("No numeric columns found in the uploaded dataset.")
-
-            if len(numeric_cols) >= 2:
-                st.subheader("🔵 Scatter Plot")
-                x_axis = st.selectbox("Select X-axis", numeric_cols, key="x_axis")
-                y_axis = st.selectbox("Select Y-axis", numeric_cols, key="y_axis")
-
-                fig2, ax2 = plt.subplots()
-                ax2.scatter(df[x_axis], df[y_axis])
-                ax2.set_title(f"{x_axis} vs {y_axis}")
-                ax2.set_xlabel(x_axis)
-                ax2.set_ylabel(y_axis)
-                st.pyplot(fig2)
-
-            if categorical_cols:
-                st.subheader("📊 Categorical Analysis")
-                selected_cat_col = st.selectbox("Select categorical column", categorical_cols)
-
-                cat_counts = df[selected_cat_col].value_counts().head(10)
-
-                fig3, ax3 = plt.subplots()
-                bars = ax3.bar(cat_counts.index.astype(str), cat_counts.values)
-
-                for bar in bars:
-                    height = bar.get_height()
-                    ax3.text(
-                        bar.get_x() + bar.get_width() / 2,
-                        height,
-                        str(int(height)),
-                        ha="center",
-                        va="bottom",
-                        fontsize=8
+                if numeric_cols:
+                    trend_col = st.selectbox(
+                        "Select numeric column for trend analysis",
+                        numeric_cols,
+                        key="trend_col"
                     )
 
-                ax3.set_title(f"Top Categories in {selected_cat_col}")
-                ax3.set_xlabel(selected_cat_col)
-                ax3.set_ylabel("Count")
-                plt.xticks(rotation=45)
-                st.pyplot(fig3)
-            else:
-                st.info("No categorical columns found in the uploaded dataset.")
+                    line_fig = px.line(df, y=trend_col, title=f"{trend_col} Trend")
+                    st.plotly_chart(line_fig, use_container_width=True)
 
-            if len(numeric_cols) > 1:
-                st.subheader("🔥 Correlation Heatmap")
-                corr = df[numeric_cols].corr()
+                    area_fig = px.area(df, y=trend_col, title=f"{trend_col} Area Trend")
+                    st.plotly_chart(area_fig, use_container_width=True)
 
-                fig4, ax4 = plt.subplots()
-                cax = ax4.matshow(corr)
-                fig4.colorbar(cax)
+                    scatter_trend_fig = px.scatter(df, y=trend_col, title=f"{trend_col} Scatter Trend")
+                    st.plotly_chart(scatter_trend_fig, use_container_width=True)
 
-                ax4.set_xticks(range(len(corr.columns)))
-                ax4.set_yticks(range(len(corr.columns)))
-                ax4.set_xticklabels(corr.columns, rotation=90)
-                ax4.set_yticklabels(corr.columns)
+                    if date_cols:
+                        trend_date_col = st.selectbox(
+                            "Select date column",
+                            date_cols,
+                            key="trend_date_col"
+                        )
+                        temp = df[[trend_date_col, trend_col]].copy()
+                        temp[trend_date_col] = pd.to_datetime(temp[trend_date_col], errors="coerce")
+                        temp = temp.dropna(subset=[trend_date_col, trend_col]).sort_values(trend_date_col)
 
-                st.pyplot(fig4)
+                        if not temp.empty:
+                            dated_fig = px.line(
+                                temp,
+                                x=trend_date_col,
+                                y=trend_col,
+                                title=f"{trend_col} over {trend_date_col}"
+                            )
+                            st.plotly_chart(dated_fig, use_container_width=True)
+                else:
+                    st.info("No numeric columns found for trend analysis.")
 
-            st.subheader("🛡️ Data Quality Checks")
-            quality_checks = data_quality_checks(df)
+            # ---------------------------
+            # TAB 3: DISTRIBUTION
+            # ---------------------------
+            with tab3:
+                st.subheader("📉 Distribution Analysis")
 
-            if quality_checks["missing_values"] > 0:
-                st.warning(f"Dataset contains {quality_checks['missing_values']} missing values.")
+                if numeric_cols:
+                    dist_col = st.selectbox(
+                        "Select numeric column for distribution",
+                        numeric_cols,
+                        key="dist_col"
+                    )
 
-            if quality_checks["duplicate_rows"] > 0:
-                st.warning(f"Dataset contains {quality_checks['duplicate_rows']} duplicate rows.")
+                    hist_fig = px.histogram(df, x=dist_col, nbins=30, title=f"Histogram of {dist_col}")
+                    st.plotly_chart(hist_fig, use_container_width=True)
 
-            if quality_checks["empty_cols"]:
-                st.warning(f"Empty columns found: {', '.join(quality_checks['empty_cols'])}")
+                    box_fig = px.box(df, y=dist_col, title=f"Box Plot of {dist_col}")
+                    st.plotly_chart(box_fig, use_container_width=True)
 
-            if quality_checks["constant_cols"]:
-                st.warning(f"Constant columns found: {', '.join(quality_checks['constant_cols'])}")
+                    violin_fig = px.violin(df, y=dist_col, title=f"Violin Plot of {dist_col}")
+                    st.plotly_chart(violin_fig, use_container_width=True)
 
-            if (
-                quality_checks["missing_values"] == 0
-                and quality_checks["duplicate_rows"] == 0
-                and not quality_checks["empty_cols"]
-                and not quality_checks["constant_cols"]
-            ):
-                st.success("No major data quality issues found.")
+                    if categorical_cols:
+                        group_col = st.selectbox(
+                            "Select category for grouped box plot",
+                            categorical_cols,
+                            key="group_box_cat"
+                        )
+                        grouped_box = px.box(
+                            df,
+                            x=group_col,
+                            y=dist_col,
+                            title=f"{dist_col} by {group_col}"
+                        )
+                        st.plotly_chart(grouped_box, use_container_width=True)
 
-            st.subheader("🤖 Smart Insights")
-            smart_insights = generate_smart_insights(
-                df,
-                numeric_cols,
-                categorical_cols,
-                date_cols,
-                quality_checks
-            )
+                if categorical_cols:
+                    st.subheader("📊 Categorical Analysis")
+                    cat_col = st.selectbox(
+                        "Select categorical column for bar chart",
+                        categorical_cols,
+                        key="cat_col_distribution"
+                    )
+                    cat_counts = df[cat_col].value_counts().head(10).reset_index()
+                    cat_counts.columns = [cat_col, "Count"]
 
-            if smart_insights:
-                for insight in smart_insights:
-                    st.markdown(f"- {insight}")
-            else:
-                st.info("No strong insights detected for this dataset.")
+                    bar_fig = px.bar(
+                        cat_counts,
+                        x=cat_col,
+                        y="Count",
+                        title=f"Top Categories in {cat_col}"
+                    )
+                    st.plotly_chart(bar_fig, use_container_width=True)
 
-            st.subheader("🧠 Advanced Insights")
-            if numeric_cols:
-                for col in numeric_cols[:4]:
-                    st.markdown(f"### {col}")
+            # ---------------------------
+            # TAB 4: CORRELATION
+            # ---------------------------
+            with tab4:
+                st.subheader("🔗 Correlation Analysis")
+
+                if len(numeric_cols) > 1:
+                    corr = df[numeric_cols].corr()
+
+                    heatmap_fig = px.imshow(
+                        corr,
+                        text_auto=True,
+                        title="Correlation Heatmap"
+                    )
+                    st.plotly_chart(heatmap_fig, use_container_width=True)
+
+                    x_axis = st.selectbox("Select X-axis", numeric_cols, key="corr_x")
+                    y_axis = st.selectbox("Select Y-axis", numeric_cols, key="corr_y")
+
+                    scatter_fig = px.scatter(
+                        df,
+                        x=x_axis,
+                        y=y_axis,
+                        title=f"{x_axis} vs {y_axis}"
+                    )
+                    st.plotly_chart(scatter_fig, use_container_width=True)
+
+                    bubble_size = st.selectbox(
+                        "Select bubble size column",
+                        numeric_cols,
+                        key="bubble_size"
+                    )
+                    bubble_fig = px.scatter(
+                        df,
+                        x=x_axis,
+                        y=y_axis,
+                        size=bubble_size,
+                        title=f"Bubble Chart: {x_axis} vs {y_axis}"
+                    )
+                    st.plotly_chart(bubble_fig, use_container_width=True)
+                else:
+                    st.info("At least two numeric columns are needed for correlation analysis.")
+
+            # ---------------------------
+            # TAB 5: DATA QUALITY
+            # ---------------------------
+            with tab5:
+                st.subheader("⚠️ Missing Values Summary")
+                missing_df = pd.DataFrame({
+                    "Column": df.columns,
+                    "Missing Count": df.isnull().sum().values,
+                    "Missing %": ((df.isnull().sum().values / len(df)) * 100).round(2)
+                }).sort_values(by="Missing Count", ascending=False)
+                st.dataframe(missing_df, use_container_width=True)
+
+                st.subheader("🛡️ Data Quality Checks")
+
+                if quality_checks["missing_values"] > 0:
+                    st.warning(f"Dataset contains {quality_checks['missing_values']} missing values.")
+
+                if quality_checks["duplicate_rows"] > 0:
+                    st.warning(f"Dataset contains {quality_checks['duplicate_rows']} duplicate rows.")
+
+                if quality_checks["empty_cols"]:
+                    st.warning(f"Empty columns found: {', '.join(quality_checks['empty_cols'])}")
+
+                if quality_checks["constant_cols"]:
+                    st.warning(f"Constant columns found: {', '.join(quality_checks['constant_cols'])}")
+
+                if (
+                    quality_checks["missing_values"] == 0
+                    and quality_checks["duplicate_rows"] == 0
+                    and not quality_checks["empty_cols"]
+                    and not quality_checks["constant_cols"]
+                ):
+                    st.success("No major data quality issues found.")
+
+                if numeric_cols:
+                    st.subheader("📈 Numeric Summary")
+                    st.dataframe(df[numeric_cols].describe().T, use_container_width=True)
+
+                    summary_num_col = st.selectbox(
+                        "Select numeric column for advanced stats",
+                        numeric_cols,
+                        key="summary_num_col"
+                    )
+
                     col_a, col_b, col_c, col_d = st.columns(4)
-                    col_a.metric("Mean", round(df[col].mean(), 2))
-                    col_b.metric("Median", round(df[col].median(), 2))
-                    col_c.metric("Min", round(df[col].min(), 2))
-                    col_d.metric("Max", round(df[col].max(), 2))
+                    col_a.metric("Mean", round(df[summary_num_col].mean(), 2))
+                    col_b.metric("Median", round(df[summary_num_col].median(), 2))
+                    col_c.metric("Min", round(df[summary_num_col].min(), 2))
+                    col_d.metric("Max", round(df[summary_num_col].max(), 2))
 
-            st.subheader("🔝 Top 5 Records")
-            st.dataframe(df.head(5), use_container_width=True)
+            # ---------------------------
+            # TAB 6: INSIGHTS & DOWNLOADS
+            # ---------------------------
+            with tab6:
+                st.subheader("🤖 Smart Insights")
+                if smart_insights:
+                    for insight in smart_insights:
+                        st.markdown(f"- {insight}")
+                else:
+                    st.info("No strong insights detected for this dataset.")
 
-            st.subheader("🔚 Bottom 5 Records")
-            st.dataframe(df.tail(5), use_container_width=True)
+                st.subheader("🧠 Advanced Insights")
+                if numeric_cols:
+                    for col in numeric_cols[:4]:
+                        st.markdown(f"### {col}")
+                        col_a, col_b, col_c, col_d = st.columns(4)
+                        col_a.metric("Mean", round(df[col].mean(), 2))
+                        col_b.metric("Median", round(df[col].median(), 2))
+                        col_c.metric("Min", round(df[col].min(), 2))
+                        col_d.metric("Max", round(df[col].max(), 2))
+                else:
+                    st.info("No numeric columns available for advanced insights.")
 
-            st.subheader("⬇️ Download Processed Data")
-            csv_data = df.to_csv(index=False).encode("utf-8")
+                st.subheader("⬇️ Download Processed Data")
+                csv_data = df.to_csv(index=False).encode("utf-8")
 
-            st.download_button(
-                label="Download CSV",
-                data=csv_data,
-                file_name="processed_data.csv",
-                mime="text/csv"
-            )
+                st.download_button(
+                    label="Download CSV",
+                    data=csv_data,
+                    file_name="processed_data.csv",
+                    mime="text/csv"
+                )
 
-            summary_text = build_summary_text(
-                df,
-                numeric_cols,
-                categorical_cols,
-                quality_checks,
-                smart_insights
-            )
+                summary_text = build_summary_text(
+                    df,
+                    numeric_cols,
+                    categorical_cols,
+                    quality_checks,
+                    smart_insights
+                )
 
-            st.download_button(
-                label="Download Summary Report",
-                data=summary_text,
-                file_name="summary_report.txt",
-                mime="text/plain"
-            )
+                st.download_button(
+                    label="Download Summary Report",
+                    data=summary_text,
+                    file_name="summary_report.txt",
+                    mime="text/plain"
+                )
 
-            st.subheader("💎 Premium Features")
-            st.info(
-                "Upgrade to unlock PDF reports, AI-generated business summary, anomaly detection, saved dashboards, and multi-file comparison."
-            )
+                st.subheader("💎 Premium Features")
+                st.info(
+                    "Upgrade to unlock PDF reports, AI-generated business summary, "
+                    "anomaly detection, saved dashboards, and multi-file comparison."
+                )
 
         except Exception as e:
             st.error(f"Error reading file: {e}")
