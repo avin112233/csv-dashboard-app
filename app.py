@@ -10,6 +10,7 @@ st.set_page_config(page_title="CSV Dashboard Generator", layout="wide")
 # HEADER
 # ---------------------------
 st.title("📊 CSV Dashboard Generator")
+st.success("NEW VERSION RUNNING - TEST 123")
 st.caption("AI-powered automated business reporting tool")
 st.write(
     "Upload your CSV file and get instant insights, visualizations, "
