@@ -326,6 +326,11 @@ if uploaded_file is not None:
     with st.spinner("Reading and analyzing your CSV file..."):
         try:
             df = pd.read_csv(uploaded_file)
+        except Exception:
+            uploaded_file.seek(0)
+            df=pd.read_csv(uploaded_file,encoding="latin1")
+            st.write("File loaded successfully")
+            st.write(df.head())
 
             st.sidebar.header("🔎 Filters")
             selected_columns = st.sidebar.multiselect(
