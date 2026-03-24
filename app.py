@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
 
 st.set_page_config(page_title="CSV Dashboard Generator", layout="wide")
 
@@ -17,8 +16,13 @@ st.write(
     "data quality checks, and downloadable data."
 )
 
-uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"],accept_multiple_files=False)
-st.write("Uploaded file object:",uploaded_file)
+uploaded_file = st.file_uploader(
+    "Upload your CSV file",
+    type=["csv"],
+    accept_multiple_files=False
+)
+
+st.write("Uploaded file object:", uploaded_file)
 
 
 # ---------------------------
@@ -324,7 +328,6 @@ def build_summary_text(df, numeric_cols, categorical_cols, quality_checks, smart
 # MAIN APP
 # ---------------------------
 if uploaded_file is not None:
-    if uploaded_file is not None:
     with st.spinner("Reading and analyzing your CSV file..."):
         try:
             uploaded_file.seek(0)
@@ -336,36 +339,6 @@ if uploaded_file is not None:
                 df = pd.read_csv(uploaded_file, encoding="latin1")
 
             st.success("File loaded successfully")
-            st.write(df.head())
-
-            st.sidebar.header("🔎 Filters")
-            selected_columns = st.sidebar.multiselect(
-                "Select columns to view",
-                options=df.columns.tolist(),
-                default=df.columns.tolist()
-            )
-
-            if not selected_columns:
-                st.warning("Please select at least one column from the sidebar.")
-                st.stop()
-
-            df = df[selected_columns]
-
-            numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-            categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
-            date_cols = detect_date_columns(df)
-            quality_checks = data_quality_checks(df)
-            smart_insights = generate_smart_insights(
-                df, numeric_cols, categorical_cols, date_cols, quality_checks
-            )
-
-            # rest of your tabs code stays same here
-
-        except Exception as e:
-            st.error(f"Error reading file: {e}")
-else:
-    st.info("Please upload a CSV file to begin.")
-            st.write("File loaded successfully:",uploaded_file)
             st.write(df.head())
 
             st.sidebar.header("🔎 Filters")
