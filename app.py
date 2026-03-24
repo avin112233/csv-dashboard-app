@@ -17,7 +17,8 @@ st.write(
     "data quality checks, and downloadable data."
 )
 
-uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"],accept_multiple_files=False)
+st.write("Uploaded file object:",uploaded_file)
 
 
 # ---------------------------
@@ -322,7 +323,7 @@ def build_summary_text(df, numeric_cols, categorical_cols, quality_checks, smart
 # ---------------------------
 # MAIN APP
 # ---------------------------
-if uploaded_file is not None:
+if uploaded_file:
     with st.spinner("Reading and analyzing your CSV file..."):
         try:
             df = pd.read_csv(uploaded_file)
