@@ -9,7 +9,7 @@ st.set_page_config(page_title="CSV Dashboard Generator", layout="wide")
 # HEADER
 # ---------------------------
 st.title("📊 CSV Dashboard Generator")
-st.success("NEW VERSION RUNNING - TEST 123")
+
 st.caption("AI-powered automated business reporting tool")
 st.write(
     "Upload your CSV file and get instant insights, visualizations, "
@@ -22,7 +22,7 @@ uploaded_file = st.file_uploader(
     accept_multiple_files=False
 )
 
-st.write("Uploaded file object:", uploaded_file)
+
 
 
 # ---------------------------
@@ -339,7 +339,7 @@ if uploaded_file is not None:
                 df = pd.read_csv(uploaded_file, encoding="latin1")
 
             st.success("File loaded successfully")
-            st.write(df.head())
+           
 
             st.sidebar.header("🔎 Filters")
             selected_columns = st.sidebar.multiselect(
