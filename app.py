@@ -12,22 +12,18 @@ st.title("📊 CSV Dashboard Generator")
 st.caption("AI-powered automated business reporting tool")
 st.write("Upload your CSV or XLSX file or try a sample dataset to generate dashboards, charts, and smart insights.")
 
+# ---------------------------
+# MOBILE FRIENDLY PLOTLY CONFIG
+# ---------------------------
 PLOTLY_CONFIG = {
     "displaylogo": False,
     "scrollZoom": False,
-    "doubleClick": False,
-    "modeBarButtonsToRemove": [
-        "zoom2d",
-        "pan2d",
-        "select2d",
-        "lasso2d",
-        "zoomIn2d",
-        "zoomOut2d",
-        "autoScale2d",
-        "resetScale2d"
-    ],
+    "doubleClick": "reset",
     "responsive": True
 }
+
+CHART_HEIGHT = 380
+
 
 # ---------------------------
 # SAMPLE DATA
@@ -79,11 +75,7 @@ def data_quality_checks(df):
 
 
 def detect_business_columns(df, numeric_cols, categorical_cols):
-    business_hints = {
-        "amount": None,
-        "category": None,
-        "date": None
-    }
+    business_hints = {"amount": None, "category": None, "date": None}
     for col in df.columns:
         c = col.lower()
         if business_hints["amount"] is None and ("amount" in c or "sales" in c or "revenue" in c):
@@ -247,7 +239,7 @@ def create_pdf_report(df, quality_checks, smart_insights):
 
     pdf.save()
     buffer.seek(0)
-    return buffer
+    return buffer.getvalue()
 
 
 def load_uploaded_file(uploaded_file, selected_sheet=None):
@@ -259,8 +251,7 @@ def load_uploaded_file(uploaded_file, selected_sheet=None):
     if file_name.endswith(".xlsx"):
         if selected_sheet is None:
             excel_file = pd.ExcelFile(uploaded_file)
-            sheet_names = excel_file.sheet_names
-            return sheet_names, "excel_sheets"
+            return excel_file.sheet_names, "excel_sheets"
         return pd.read_excel(uploaded_file, sheet_name=selected_sheet), f"Uploaded Excel File - {selected_sheet}"
 
     return None, None
@@ -289,12 +280,11 @@ if uploaded_file is not None:
 
     elif file_name.endswith(".xlsx"):
         sheet_result, result_type = load_uploaded_file(uploaded_file)
-
         if result_type == "excel_sheets":
             selected_sheet = st.selectbox("Select Excel sheet", sheet_result, key="excel_sheet_select")
+            uploaded_file.seek(0)
             df = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
             source_label = f"Uploaded Excel File - {selected_sheet}"
-
     else:
         st.error("Unsupported file format. Please upload a CSV or XLSX file.")
         st.stop()
@@ -353,6 +343,7 @@ if df is not None:
             st.subheader("🥧 Category Distribution")
             overview_cat = st.selectbox("Select categorical column", categorical_cols, key="overview_cat")
             pie_fig = px.pie(df, names=overview_cat, title=f"{overview_cat} Distribution")
+            pie_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(pie_fig, use_container_width=True, config=PLOTLY_CONFIG, key="overview_pie_chart")
 
         st.subheader("🔝 Top 5 Records")
@@ -366,9 +357,11 @@ if df is not None:
         if numeric_cols:
             trend_col = st.selectbox("Select numeric column for trend analysis", numeric_cols, key="trend_col")
             line_fig = px.line(df, y=trend_col, title=f"{trend_col} Trend")
+            line_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(line_fig, use_container_width=True, config=PLOTLY_CONFIG, key="trend_line_chart")
 
             area_fig = px.area(df, y=trend_col, title=f"{trend_col} Area Trend")
+            area_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(area_fig, use_container_width=True, config=PLOTLY_CONFIG, key="trend_area_chart")
 
             if date_cols:
@@ -378,6 +371,7 @@ if df is not None:
                 temp = temp.dropna().sort_values(date_col)
                 if not temp.empty:
                     dated_fig = px.line(temp, x=date_col, y=trend_col, title=f"{trend_col} over time")
+                    dated_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
                     st.plotly_chart(dated_fig, use_container_width=True, config=PLOTLY_CONFIG, key="dated_trend_chart")
         else:
             st.info("No numeric columns found.")
@@ -387,23 +381,28 @@ if df is not None:
         if numeric_cols:
             dist_col = st.selectbox("Select numeric column for distribution", numeric_cols, key="dist_col")
             hist_fig = px.histogram(df, x=dist_col, nbins=30, title=f"Histogram of {dist_col}")
+            hist_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(hist_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_histogram")
 
             box_fig = px.box(df, y=dist_col, title=f"Box Plot of {dist_col}")
+            box_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(box_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_boxplot")
 
             violin_fig = px.violin(df, y=dist_col, title=f"Violin Plot of {dist_col}")
+            violin_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(violin_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_violin")
 
         if categorical_cols:
             st.subheader("🍰 Category Distribution")
             cat_col = st.selectbox("Select categorical column", categorical_cols, key="cat_dist")
             pie_fig = px.pie(df, names=cat_col, title=f"{cat_col} Distribution")
+            pie_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(pie_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_pie_chart")
 
             cat_counts = df[cat_col].value_counts().head(10).reset_index()
             cat_counts.columns = [cat_col, "Count"]
             bar_fig = px.bar(cat_counts, x=cat_col, y="Count", title=f"Top Categories in {cat_col}")
+            bar_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(bar_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_bar_chart")
 
     with tab4:
@@ -411,15 +410,18 @@ if df is not None:
         if len(numeric_cols) > 1:
             corr = df[numeric_cols].corr()
             heatmap_fig = px.imshow(corr, text_auto=True, title="Correlation Heatmap")
+            heatmap_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(heatmap_fig, use_container_width=True, config=PLOTLY_CONFIG, key="correlation_heatmap")
 
             x_axis = st.selectbox("Select X-axis", numeric_cols, key="corr_x")
             y_axis = st.selectbox("Select Y-axis", numeric_cols, key="corr_y")
             scatter_fig = px.scatter(df, x=x_axis, y=y_axis, title=f"{x_axis} vs {y_axis}")
+            scatter_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(scatter_fig, use_container_width=True, config=PLOTLY_CONFIG, key="correlation_scatter")
 
             bubble_size = st.selectbox("Select bubble size column", numeric_cols, key="bubble_size")
             bubble_fig = px.scatter(df, x=x_axis, y=y_axis, size=bubble_size, title=f"Bubble Chart: {x_axis} vs {y_axis}")
+            bubble_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(bubble_fig, use_container_width=True, config=PLOTLY_CONFIG, key="correlation_bubble")
         else:
             st.info("At least two numeric columns are needed.")
@@ -485,16 +487,16 @@ if df is not None:
         summary_text = build_summary_text(df, numeric_cols, categorical_cols, quality_checks, smart_insights)
         st.download_button(
             label="Download Summary Report (.txt)",
-            data=summary_text,
+            data=summary_text.encode("utf-8"),
             file_name="summary_report.txt",
             mime="text/plain",
             key="download_summary_txt"
         )
 
-        pdf_buffer = create_pdf_report(df, quality_checks, smart_insights)
+        pdf_bytes = create_pdf_report(df, quality_checks, smart_insights)
         st.download_button(
             label="Download PDF Report",
-            data=pdf_buffer,
+            data=pdf_bytes,
             file_name="csv_dashboard_report.pdf",
             mime="application/pdf",
             key="download_pdf_report"
