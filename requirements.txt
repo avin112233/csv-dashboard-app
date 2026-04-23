@@ -5,3 +5,4 @@ plotly
 seaborn
 reportlab
 openpyxl
+numpy
