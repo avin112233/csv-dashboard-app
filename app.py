@@ -8,9 +8,72 @@ from reportlab.pdfgen import canvas
 
 st.set_page_config(page_title="CSV Dashboard Generator", layout="wide")
 
-st.title("📊 CSV Dashboard Generator")
-st.caption("AI-powered automated business reporting tool")
-st.write("Upload your CSV or XLSX file or try a sample dataset to generate dashboards, charts, and smart insights.")
+def load_custom_css():
+    st.markdown("""
+    <style>
+    .main {
+        background-color: #f7f9fc;
+    }
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 2rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+    .hero-card {
+        background: linear-gradient(135deg, #0f172a, #1e3a8a);
+        padding: 1.4rem 1.6rem;
+        border-radius: 18px;
+        color: white;
+        margin-bottom: 1rem;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    }
+    .hero-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.3rem;
+    }
+    .hero-subtitle {
+        font-size: 1rem;
+        opacity: 0.92;
+    }
+    .section-card {
+        background: white;
+        padding: 1rem 1rem 0.8rem 1rem;
+        border-radius: 16px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+        margin-bottom: 1rem;
+    }
+    .small-note {
+        color: #475569;
+        font-size: 0.92rem;
+        margin-top: 0.2rem;
+    }
+    div[data-testid="stMetric"] {
+        background: white;
+        border: 1px solid #e5e7eb;
+        padding: 14px;
+        border-radius: 16px;
+        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.04);
+    }
+    div[data-testid="stSidebar"] {
+        background: #ffffff;
+        border-right: 1px solid #e5e7eb;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+load_custom_css()
+
+st.markdown("""
+<div class="hero-card">
+    <div class="hero-title">📊 CSV Dashboard Generator</div>
+    <div class="hero-subtitle">
+        Upload CSV/XLSX files, explore KPIs, create polished visuals, and download business-ready reports.
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ---------------------------
 # MOBILE FRIENDLY PLOTLY CONFIG
@@ -260,14 +323,35 @@ def load_uploaded_file(uploaded_file, selected_sheet=None):
 # ---------------------------
 # DATA INPUT
 # ---------------------------
+st.markdown('<div class="section-card">', unsafe_allow_html=True)
 st.subheader("🚀 Get Started")
-c1, c2 = st.columns([2, 1])
+
+c1, c2, c3 = st.columns([2.2, 1, 1])
 
 with c1:
-    uploaded_file = st.file_uploader("Upload your file", type=["csv", "xlsx"], key="main_file_uploader")
+    uploaded_file = st.file_uploader(
+        "Upload your CSV or Excel file",
+        type=["csv", "xlsx"],
+        key="main_file_uploader",
+        help="Supported formats: .csv and .xlsx"
+    )
 
 with c2:
-    use_sample = st.button("Try Sample Dataset", key="sample_dataset_button")
+    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+    use_sample = st.button("Try Sample Dataset", use_container_width=True, key="sample_dataset_button")
+
+with c3:
+    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+    st.download_button(
+        "Download Demo CSV Format",
+        data=get_sample_data().to_csv(index=False).encode("utf-8"),
+        file_name="sample_dataset.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+st.markdown('<p class="small-note">Tip: Start with the sample dataset to test all charts and insights before uploading your own file.</p>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 df = None
 source_label = None
@@ -297,12 +381,29 @@ if df is not None:
     st.success(f"Loaded successfully: {source_label}")
 
     with st.spinner("Analyzing your data..."):
-        st.sidebar.header("🔎 Filters")
+        st.sidebar.markdown("## ⚙️ Control Panel")
+        st.sidebar.caption("Customize columns, charts, and analysis view")
+
         selected_columns = st.sidebar.multiselect(
-            "Select columns to view",
+            "Select columns to include",
             options=df.columns.tolist(),
             default=df.columns.tolist(),
             key="sidebar_selected_columns"
+        )
+
+        show_preview_rows = st.sidebar.slider(
+            "Rows to preview",
+            min_value=5,
+            max_value=50,
+            value=10,
+            step=5
+        )
+
+        chart_template = st.sidebar.selectbox(
+            "Chart style",
+            ["plotly", "plotly_white", "ggplot2", "seaborn", "simple_white"],
+            index=1,
+            key="chart_template"
         )
 
         if not selected_columns:
@@ -315,7 +416,34 @@ if df is not None:
         categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
         date_cols = detect_date_columns(df)
         quality_checks = data_quality_checks(df)
-        smart_insights = generate_smart_insights(df, numeric_cols, categorical_cols, date_cols, quality_checks)
+        smart_insights = generate_smart_insights(
+            df, numeric_cols, categorical_cols, date_cols, quality_checks
+        )
+
+    def apply_chart_style(fig):
+        fig.update_layout(
+            template=chart_template,
+            height=CHART_HEIGHT,
+            margin=dict(l=10, r=10, t=50, b=10)
+        )
+        return fig
+
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    s1, s2, s3 = st.columns([1.2, 1, 1])
+
+    with s1:
+        st.markdown(f"**Source:** {source_label}")
+    with s2:
+        st.markdown(f"**Numeric columns:** {len(numeric_cols)}")
+    with s3:
+        st.markdown(f"**Categorical columns:** {len(categorical_cols)}")
+
+    if date_cols:
+        st.markdown(f"**Detected date columns:** {', '.join(date_cols[:5])}")
+    else:
+        st.markdown("**Detected date columns:** None")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         ["📊 Overview", "📈 Trends", "📉 Distribution", "🔗 Correlation", "🛡️ Data Quality", "🧠 Insights & Downloads"]
@@ -330,7 +458,7 @@ if df is not None:
         d.metric("Duplicate Rows", int(df.duplicated().sum()))
 
         st.subheader("📂 Data Preview")
-        st.dataframe(df.head(10), use_container_width=True)
+        st.dataframe(df.head(show_preview_rows), use_container_width=True)
 
         st.subheader("🧾 Column Data Types")
         dtype_df = pd.DataFrame({
@@ -341,10 +469,19 @@ if df is not None:
 
         if categorical_cols:
             st.subheader("🥧 Category Distribution")
-            overview_cat = st.selectbox("Select categorical column", categorical_cols, key="overview_cat")
+            overview_cat = st.selectbox(
+                "Select categorical column",
+                categorical_cols,
+                key="overview_cat"
+            )
             pie_fig = px.pie(df, names=overview_cat, title=f"{overview_cat} Distribution")
-            pie_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(pie_fig, use_container_width=True, config=PLOTLY_CONFIG, key="overview_pie_chart")
+            apply_chart_style(pie_fig)
+            st.plotly_chart(
+                pie_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="overview_pie_chart"
+            )
 
         st.subheader("🔝 Top 5 Records")
         st.dataframe(df.head(5), use_container_width=True)
@@ -355,84 +492,185 @@ if df is not None:
     with tab2:
         st.subheader("📈 Trend Analysis")
         if numeric_cols:
-            trend_col = st.selectbox("Select numeric column for trend analysis", numeric_cols, key="trend_col")
+            trend_col = st.selectbox(
+                "Select numeric column for trend analysis",
+                numeric_cols,
+                key="trend_col"
+            )
+
             line_fig = px.line(df, y=trend_col, title=f"{trend_col} Trend")
-            line_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(line_fig, use_container_width=True, config=PLOTLY_CONFIG, key="trend_line_chart")
+            apply_chart_style(line_fig)
+            st.plotly_chart(
+                line_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="trend_line_chart"
+            )
 
             area_fig = px.area(df, y=trend_col, title=f"{trend_col} Area Trend")
-            area_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(area_fig, use_container_width=True, config=PLOTLY_CONFIG, key="trend_area_chart")
+            apply_chart_style(area_fig)
+            st.plotly_chart(
+                area_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="trend_area_chart"
+            )
 
             if date_cols:
                 date_col = st.selectbox("Select date column", date_cols, key="date_col")
                 temp = df[[date_col, trend_col]].copy()
                 temp[date_col] = pd.to_datetime(temp[date_col], errors="coerce")
                 temp = temp.dropna().sort_values(date_col)
+
                 if not temp.empty:
-                    dated_fig = px.line(temp, x=date_col, y=trend_col, title=f"{trend_col} over time")
-                    dated_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-                    st.plotly_chart(dated_fig, use_container_width=True, config=PLOTLY_CONFIG, key="dated_trend_chart")
+                    dated_fig = px.line(
+                        temp,
+                        x=date_col,
+                        y=trend_col,
+                        title=f"{trend_col} over time"
+                    )
+                    apply_chart_style(dated_fig)
+                    st.plotly_chart(
+                        dated_fig,
+                        use_container_width=True,
+                        config=PLOTLY_CONFIG,
+                        key="dated_trend_chart"
+                    )
         else:
             st.info("No numeric columns found.")
 
     with tab3:
         st.subheader("📉 Distribution Analysis")
+
         if numeric_cols:
-            dist_col = st.selectbox("Select numeric column for distribution", numeric_cols, key="dist_col")
-            hist_fig = px.histogram(df, x=dist_col, nbins=30, title=f"Histogram of {dist_col}")
-            hist_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(hist_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_histogram")
+            dist_col = st.selectbox(
+                "Select numeric column for distribution",
+                numeric_cols,
+                key="dist_col"
+            )
+
+            hist_fig = px.histogram(
+                df,
+                x=dist_col,
+                nbins=30,
+                title=f"Histogram of {dist_col}"
+            )
+            apply_chart_style(hist_fig)
+            st.plotly_chart(
+                hist_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="distribution_histogram"
+            )
 
             box_fig = px.box(df, y=dist_col, title=f"Box Plot of {dist_col}")
-            box_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(box_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_boxplot")
+            apply_chart_style(box_fig)
+            st.plotly_chart(
+                box_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="distribution_boxplot"
+            )
 
             violin_fig = px.violin(df, y=dist_col, title=f"Violin Plot of {dist_col}")
-            violin_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(violin_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_violin")
+            apply_chart_style(violin_fig)
+            st.plotly_chart(
+                violin_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="distribution_violin"
+            )
 
         if categorical_cols:
             st.subheader("🍰 Category Distribution")
-            cat_col = st.selectbox("Select categorical column", categorical_cols, key="cat_dist")
+            cat_col = st.selectbox(
+                "Select categorical column",
+                categorical_cols,
+                key="cat_dist"
+            )
+
             pie_fig = px.pie(df, names=cat_col, title=f"{cat_col} Distribution")
-            pie_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(pie_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_pie_chart")
+            apply_chart_style(pie_fig)
+            st.plotly_chart(
+                pie_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="distribution_pie_chart"
+            )
 
             cat_counts = df[cat_col].value_counts().head(10).reset_index()
             cat_counts.columns = [cat_col, "Count"]
-            bar_fig = px.bar(cat_counts, x=cat_col, y="Count", title=f"Top Categories in {cat_col}")
-            bar_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(bar_fig, use_container_width=True, config=PLOTLY_CONFIG, key="distribution_bar_chart")
+            bar_fig = px.bar(
+                cat_counts,
+                x=cat_col,
+                y="Count",
+                title=f"Top Categories in {cat_col}"
+            )
+            apply_chart_style(bar_fig)
+            st.plotly_chart(
+                bar_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="distribution_bar_chart"
+            )
 
     with tab4:
         st.subheader("🔗 Correlation Analysis")
+
         if len(numeric_cols) > 1:
             corr = df[numeric_cols].corr()
             heatmap_fig = px.imshow(corr, text_auto=True, title="Correlation Heatmap")
-            heatmap_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(heatmap_fig, use_container_width=True, config=PLOTLY_CONFIG, key="correlation_heatmap")
+            apply_chart_style(heatmap_fig)
+            st.plotly_chart(
+                heatmap_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="correlation_heatmap"
+            )
 
             x_axis = st.selectbox("Select X-axis", numeric_cols, key="corr_x")
             y_axis = st.selectbox("Select Y-axis", numeric_cols, key="corr_y")
-            scatter_fig = px.scatter(df, x=x_axis, y=y_axis, title=f"{x_axis} vs {y_axis}")
-            scatter_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(scatter_fig, use_container_width=True, config=PLOTLY_CONFIG, key="correlation_scatter")
 
-            bubble_size = st.selectbox("Select bubble size column", numeric_cols, key="bubble_size")
-            bubble_fig = px.scatter(df, x=x_axis, y=y_axis, size=bubble_size, title=f"Bubble Chart: {x_axis} vs {y_axis}")
-            bubble_fig.update_layout(height=CHART_HEIGHT, margin=dict(l=10, r=10, t=50, b=10))
-            st.plotly_chart(bubble_fig, use_container_width=True, config=PLOTLY_CONFIG, key="correlation_bubble")
+            scatter_fig = px.scatter(df, x=x_axis, y=y_axis, title=f"{x_axis} vs {y_axis}")
+            apply_chart_style(scatter_fig)
+            st.plotly_chart(
+                scatter_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="correlation_scatter"
+            )
+
+            bubble_size = st.selectbox(
+                "Select bubble size column",
+                numeric_cols,
+                key="bubble_size"
+            )
+            bubble_fig = px.scatter(
+                df,
+                x=x_axis,
+                y=y_axis,
+                size=bubble_size,
+                title=f"Bubble Chart: {x_axis} vs {y_axis}"
+            )
+            apply_chart_style(bubble_fig)
+            st.plotly_chart(
+                bubble_fig,
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="correlation_bubble"
+            )
         else:
             st.info("At least two numeric columns are needed.")
 
     with tab5:
         st.subheader("⚠️ Missing Values Summary")
+
         missing_df = pd.DataFrame({
             "Column": df.columns,
             "Missing Count": df.isnull().sum().values,
             "Missing %": ((df.isnull().sum().values / len(df)) * 100).round(2)
         }).sort_values(by="Missing Count", ascending=False)
+
         st.dataframe(missing_df, use_container_width=True)
 
         st.subheader("🛡️ Data Quality Checks")
@@ -444,6 +682,7 @@ if df is not None:
             st.warning(f"Empty columns found: {', '.join(quality_checks['empty_cols'])}")
         if quality_checks["constant_cols"]:
             st.warning(f"Constant columns found: {', '.join(quality_checks['constant_cols'])}")
+
         if (
             quality_checks["missing_values"] == 0
             and quality_checks["duplicate_rows"] == 0
@@ -484,7 +723,9 @@ if df is not None:
             key="download_processed_csv"
         )
 
-        summary_text = build_summary_text(df, numeric_cols, categorical_cols, quality_checks, smart_insights)
+        summary_text = build_summary_text(
+            df, numeric_cols, categorical_cols, quality_checks, smart_insights
+        )
         st.download_button(
             label="Download Summary Report (.txt)",
             data=summary_text.encode("utf-8"),
@@ -503,7 +744,9 @@ if df is not None:
         )
 
         st.subheader("💎 Premium Features")
-        st.info("Upgrade to unlock advanced AI explanations, saved dashboards, multi-file comparison, and premium PDF reports.")
+        st.info(
+            "Upgrade to unlock advanced AI explanations, saved dashboards, multi-file comparison, and premium PDF reports."
+        )
 
 else:
     st.info("Upload a CSV or XLSX file or click 'Try Sample Dataset' to begin.")
